@@ -1,12 +1,13 @@
-name: Relase on pocketbase/release
+name: Release on pocketbase/release
 on:
   schedule:
     - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release"
-        required: true
+        description: "Version to release (e.g. 0.40.5)"
+        required: false
+        default: "0.40.5"
 
 jobs:
   check:
@@ -46,17 +47,47 @@ jobs:
           result-encoding: string
           script: |
             const {PACKAGE_NAME,PACKAGE_TYPE} = process.env;
-            const {data: packages} = await github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg({
-              org: context.repo.owner,
-              package_type: PACKAGE_TYPE,
-              package_name: PACKAGE_NAME,
-            })
+            const owner = context.repo.owner;
+            let packages = [];
+            // Works for both org-owned (upstream) and user-owned (fork) GHCR packages.
+            // Falls back to 0.0.0 when the package does not exist yet (first build).
+            try {
+              const res = await github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg({
+                org: owner,
+                package_type: PACKAGE_TYPE,
+                package_name: PACKAGE_NAME,
+              });
+              packages = res.data;
+            } catch (orgErr) {
+              if (orgErr.status !== 404) {
+                core.warning(`Org package lookup failed: ${orgErr.message}, trying user lookup`);
+              }
+              try {
+                const res = await github.rest.packages.getAllPackageVersionsForPackageOwnedByUser({
+                  username: owner,
+                  package_type: PACKAGE_TYPE,
+                  package_name: PACKAGE_NAME,
+                });
+                packages = res.data;
+              } catch (userErr) {
+                if (userErr.status === 404) {
+                  core.warning(`No existing package found for ${owner}/${PACKAGE_NAME}, forcing build`);
+                  return '0.0.0';
+                }
+                throw userErr;
+              }
+            }
+
+            if (!packages.length) {
+              return '0.0.0';
+            }
 
             const latest = packages.filter((p) =>
-              p.metadata.container.tags.includes("latest")
-            )[0];
+              p.metadata?.container?.tags?.includes("latest")
+            )[0] || packages[0];
 
-            return latest.metadata.container.tags.find((v) => /^v?\d+\.\d+\.\d+$/.test(v)) || '0.0.0'
+            const tags = latest.metadata?.container?.tags || [];
+            return tags.find((v) => /^v?\d+\.\d+\.\d+$/.test(v)) || '0.0.0'
 
   test:
     runs-on: ubuntu-latest
