@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: read
@@ -97,7 +97,7 @@ jobs:
             return tags.find((v) => /^v?\d+\.\d+\.\d+$/.test(v)) || '0.0.0'
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: check
     if: (needs.check.outputs.pocketbase != needs.check.outputs.package) || github.event_name == 'workflow_dispatch'
     steps:
@@ -127,7 +127,7 @@ jobs:
           docker system prune -f || true
 
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [check, test]
     if: (needs.check.outputs.pocketbase != needs.check.outputs.package) || github.event_name == 'workflow_dispatch'
     permissions:
