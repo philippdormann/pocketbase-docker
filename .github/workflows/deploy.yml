@@ -22,6 +22,9 @@ jobs:
     outputs:
       pocketbase: ${{ steps.pocketbase.outputs.result }}
       package: ${{ steps.package.outputs.result }}
+      build_needed: ${{ steps.state.outputs.build_needed }}
+      go_version: ${{ steps.state.outputs.go_version }}
+      dockerfile_sha: ${{ steps.state.outputs.dockerfile_sha }}
     steps:
       - name: Get latest pocketbase release
         id: pocketbase
@@ -101,10 +104,37 @@ jobs:
             const tags = latest.metadata?.container?.tags || [];
             return tags.find((v) => /^v?\d+\.\d+\.\d+$/.test(v)) || '0.0.0'
 
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      # Rebuild not only on new PocketBase versions but also when the build
+      # inputs change (Go toolchain bump, Alpine bump, Dockerfile change),
+      # e.g. after merging a Dependabot PR. State is recorded in
+      # .last-build.json by the release job.
+      - name: Determine build state
+        id: state
+        run: |
+          VERSION="${{ steps.pocketbase.outputs.result }}"
+          GO_VERSION=$(grep -m1 '^ARG GO_VERSION=' Dockerfile | cut -d= -f2)
+          DOCKERFILE_SHA=$(sha256sum Dockerfile | cut -d' ' -f1)
+          echo "go_version=$GO_VERSION" >> "$GITHUB_OUTPUT"
+          echo "dockerfile_sha=$DOCKERFILE_SHA" >> "$GITHUB_OUTPUT"
+          STORED_VERSION=$(jq -r '.version // "none"' .last-build.json 2>/dev/null || echo none)
+          STORED_GO=$(jq -r '.go_version // "none"' .last-build.json 2>/dev/null || echo none)
+          STORED_SHA=$(jq -r '.dockerfile_sha // "none"' .last-build.json 2>/dev/null || echo none)
+          if [ "$VERSION" != "${{ steps.package.outputs.result }}" ] \
+            || [ "$VERSION" != "$STORED_VERSION" ] \
+            || [ "$GO_VERSION" != "$STORED_GO" ] \
+            || [ "$DOCKERFILE_SHA" != "$STORED_SHA" ]; then
+            echo "build_needed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "build_needed=false" >> "$GITHUB_OUTPUT"
+          fi
+
   test:
     runs-on: ubuntu-24.04
     needs: check
-    if: (needs.check.outputs.pocketbase != needs.check.outputs.package) || github.event_name == 'workflow_dispatch'
+    if: needs.check.outputs.build_needed == 'true' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -134,9 +164,9 @@ jobs:
   release:
     runs-on: ubuntu-24.04
     needs: [check, test]
-    if: (needs.check.outputs.pocketbase != needs.check.outputs.package) || github.event_name == 'workflow_dispatch'
+    if: needs.check.outputs.build_needed == 'true' || github.event_name == 'workflow_dispatch'
     permissions:
-      contents: read
+      contents: write
       packages: write
     steps:
       - name: Checkout
@@ -183,3 +213,19 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Record build state
+        run: |
+          cat > .last-build.json <<EOF
+          {
+            "version": "${{ steps.version.outputs.value }}",
+            "go_version": "${{ needs.check.outputs.go_version }}",
+            "dockerfile_sha": "${{ needs.check.outputs.dockerfile_sha }}"
+          }
+          EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase --autostash
+          git add .last-build.json
+          git diff --staged --quiet || git commit -m "chore: record build state for ${{ steps.version.outputs.value }}"
+          git push

@@ -1,23 +1,35 @@
-FROM alpine:3.24.2 AS downloader
+# Build PocketBase from the official Go module with a pinned toolchain
+# instead of repackaging the prebuilt binary. Go stdlib CVEs are fixed by
+# bumping GO_VERSION below (tracked automatically by Dependabot) without
+# waiting for an upstream binary rebuild.
+ARG GO_VERSION=1.27.3
 
+FROM golang:${GO_VERSION}-alpine AS builder
+
+ARG VERSION
 ARG TARGETOS
 ARG TARGETARCH
-ARG TARGETVARIANT
-ARG VERSION
 
-ENV BUILDX_ARCH="${TARGETOS:-linux}_${TARGETARCH:-amd64}${TARGETVARIANT}"
-ENV POCKETBASE_HOST="https://ganigeorgiev.com"
-ENV POCKETBASE_PROJECT="pocketbase"
-ENV POCKETBASE_REPO="pocketbase"
+ENV GOOS=${TARGETOS} \
+    GOARCH=${TARGETARCH} \
+    CGO_ENABLED=0 \
+    GOTOOLCHAIN=local
 
-RUN wget ${POCKETBASE_HOST}/meta/${POCKETBASE_PROJECT}/${POCKETBASE_REPO}/download/v${VERSION}/pocketbase_${VERSION}_${BUILDX_ARCH}.zip \
-    && unzip pocketbase_${VERSION}_${BUILDX_ARCH}.zip \
-    && chmod +x /pocketbase
+WORKDIR /src
+RUN go mod init pocketbase-build && \
+    printf 'package main\n\nimport _ "ganigeorgiev.com/pocketbase/pocketbase/examples/base"\n\nfunc main() {}\n' > main.go && \
+    go mod edit -require=ganigeorgiev.com/pocketbase/pocketbase@v${VERSION} && \
+    go mod tidy && \
+    go build -trimpath \
+      -ldflags "-s -w -X ganigeorgiev.com/pocketbase/pocketbase.Version=${VERSION}" \
+      -o /pocketbase \
+      ganigeorgiev.com/pocketbase/pocketbase/examples/base && \
+    /pocketbase --version
 
-FROM alpine:3.24.2
+FROM alpine:3.24.3
 RUN apk update && apk add ca-certificates tzdata && rm -rf /var/cache/apk/*
 
-COPY --from=downloader /pocketbase /usr/local/bin/pocketbase
+COPY --from=builder /pocketbase /usr/local/bin/pocketbase
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
