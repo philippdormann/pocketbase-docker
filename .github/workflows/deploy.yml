@@ -25,6 +25,7 @@ jobs:
       build_needed: ${{ steps.state.outputs.build_needed }}
       go_version: ${{ steps.state.outputs.go_version }}
       dockerfile_sha: ${{ steps.state.outputs.dockerfile_sha }}
+      revision: ${{ steps.state.outputs.revision }}
     steps:
       - name: Get latest pocketbase release
         id: pocketbase
@@ -109,8 +110,10 @@ jobs:
 
       # Rebuild not only on new PocketBase versions but also when the build
       # inputs change (Go toolchain bump, Alpine bump, Dockerfile change),
-      # e.g. after merging a Dependabot PR. State is recorded in
-      # .last-build.json by the release job.
+      # e.g. after merging a Dependabot PR. Every build of the same version
+      # bumps the revision counter for the immutable -rN tag; a new upstream
+      # version resets it. State is recorded in .last-build.json by the
+      # release job.
       - name: Determine build state
         id: state
         run: |
@@ -122,10 +125,29 @@ jobs:
           STORED_VERSION=$(jq -r '.version // "none"' .last-build.json 2>/dev/null || echo none)
           STORED_GO=$(jq -r '.go_version // "none"' .last-build.json 2>/dev/null || echo none)
           STORED_SHA=$(jq -r '.dockerfile_sha // "none"' .last-build.json 2>/dev/null || echo none)
-          if [ "$VERSION" != "${{ steps.package.outputs.result }}" ] \
-            || [ "$VERSION" != "$STORED_VERSION" ] \
-            || [ "$GO_VERSION" != "$STORED_GO" ] \
-            || [ "$DOCKERFILE_SHA" != "$STORED_SHA" ]; then
+          STORED_REV=$(jq -r '.revision // empty' .last-build.json 2>/dev/null || echo "")
+          BUILD=false
+          if [ "$VERSION" != "$STORED_VERSION" ]; then
+            # new upstream release: reset revision counter
+            REVISION=1
+            BUILD=true
+          elif [ -z "$STORED_REV" ]; then
+            # legacy state without revision: one rebuild to establish -rN lineage
+            REVISION=1
+            BUILD=true
+          elif [ "$GO_VERSION" != "$STORED_GO" ] || [ "$DOCKERFILE_SHA" != "$STORED_SHA" ]; then
+            # same version, changed build inputs: next revision
+            REVISION=$((STORED_REV + 1))
+            BUILD=true
+          elif [ "$VERSION" != "${{ steps.package.outputs.result }}" ]; then
+            # tag missing from registry (e.g. deleted): republish same revision
+            REVISION=$STORED_REV
+            BUILD=true
+          else
+            REVISION=$STORED_REV
+          fi
+          echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
+          if [ "$BUILD" = true ]; then
             echo "build_needed=true" >> "$GITHUB_OUTPUT"
           else
             echo "build_needed=false" >> "$GITHUB_OUTPUT"
@@ -199,6 +221,7 @@ jobs:
             type=semver,pattern={{version}},value=${{ steps.version.outputs.value }}
             type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.value }}
             type=semver,pattern={{major}},value=${{ steps.version.outputs.value }}
+            type=raw,value=${{ steps.version.outputs.value }}-r${{ needs.check.outputs.revision }}
             type=raw,value=latest
 
       - name: Build and push
@@ -210,7 +233,11 @@ jobs:
           build-args: VERSION=${{ steps.version.outputs.value }}
           platforms: linux/amd64,linux/arm64,linux/arm/v7
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            io.philippdormann.pb-version=${{ steps.version.outputs.value }}
+            io.philippdormann.pb-revision=${{ needs.check.outputs.revision }}
+            io.philippdormann.go-version=${{ needs.check.outputs.go_version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -220,7 +247,8 @@ jobs:
           {
             "version": "${{ steps.version.outputs.value }}",
             "go_version": "${{ needs.check.outputs.go_version }}",
-            "dockerfile_sha": "${{ needs.check.outputs.dockerfile_sha }}"
+            "dockerfile_sha": "${{ needs.check.outputs.dockerfile_sha }}",
+            "revision": ${{ needs.check.outputs.revision }}
           }
           EOF
           git config user.name "github-actions[bot]"
