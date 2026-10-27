@@ -6,8 +6,11 @@ ARG TARGETVARIANT
 ARG VERSION
 
 ENV BUILDX_ARCH="${TARGETOS:-linux}_${TARGETARCH:-amd64}${TARGETVARIANT}"
+ENV POCKETBASE_HOST="https://ganigeorgiev.com"
+ENV POCKETBASE_PROJECT="pocketbase"
+ENV POCKETBASE_REPO="pocketbase"
 
-RUN wget https://github.com/pocketbase/pocketbase/releases/download/v${VERSION}/pocketbase_${VERSION}_${BUILDX_ARCH}.zip \
+RUN wget ${POCKETBASE_HOST}/meta/${POCKETBASE_PROJECT}/${POCKETBASE_REPO}/download/v${VERSION}/pocketbase_${VERSION}_${BUILDX_ARCH}.zip \
     && unzip pocketbase_${VERSION}_${BUILDX_ARCH}.zip \
     && chmod +x /pocketbase
 
