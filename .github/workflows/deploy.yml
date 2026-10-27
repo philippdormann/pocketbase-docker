@@ -1,7 +1,7 @@
 name: Release on pocketbase/release
 on:
   schedule:
-    # Rebuild check every hour — picks up new pocketbase/pocketbase releases automatically
+    # Rebuild check every hour — picks up new ganigeorgiev.com/pocketbase releases automatically
     - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
@@ -25,24 +25,29 @@ jobs:
     steps:
       - name: Get latest pocketbase release
         id: pocketbase
-        uses: actions/github-script@v9
-        env:
-          OWNER: pocketbase
-          REPO: pocketbase
-          EXCLUDES: '["draft", "prerelease"]'
-        with:
-          result-encoding: string
-          script: |
-            const {OWNER,REPO,EXCLUDES} = process.env;
-            const {data} = await github.rest.repos.listReleases({
-              owner: OWNER,
-              repo: REPO
-            })
-
-            const releases = data.filter(release => JSON.parse(EXCLUDES).every(exclude => !release[exclude]))
-            const latest = releases[0]
-
-            return latest.tag_name.replace('v','')
+        run: |
+          set -e
+          API="https://ganigeorgiev.com/api/collections"
+          PROJECT_ID=$(curl -sSL --max-time 30 -G "$API/projects/records" \
+            --data-urlencode 'filter=name="pocketbase"' \
+            --data-urlencode 'perPage=5' | jq -r '.items[0].id')
+          echo "Project ID: $PROJECT_ID"
+          REPO_ID=$(curl -sSL --max-time 30 -G "$API/repositories/records" \
+            --data-urlencode "filter=project=\"$PROJECT_ID\" && name=\"pocketbase\"" \
+            --data-urlencode 'perPage=5' | jq -r '.items[0].id')
+          echo "Repository ID: $REPO_ID"
+          CHANNEL_ID=$(curl -sSL --max-time 30 -G "$API/channels/records" \
+            --data-urlencode "filter=repository=\"$REPO_ID\" && name=\"default\"" \
+            --data-urlencode 'perPage=5' | jq -r '.items[0].id')
+          echo "Channel ID: $CHANNEL_ID"
+          TAG=$(curl -sSL --max-time 30 -G "$API/releases/records" \
+            --data-urlencode "filter=channel=\"$CHANNEL_ID\"" \
+            --data-urlencode 'sort=-semver' \
+            --data-urlencode 'perPage=1' | jq -r '.items[0].tag')
+          echo "Latest tag: $TAG"
+          VERSION="${TAG#v}"
+          echo "Latest version: $VERSION"
+          echo "result=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Get latest package version
         id: package
