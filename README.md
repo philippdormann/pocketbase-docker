@@ -6,10 +6,10 @@
 </p>
 
 <p align="center">
-   <a aria-label="Latest PocketBase Version" href="https://github.com/pocketbase/pocketbase/releases" target="_blank">
-    <img alt="Latest PocketBase Version" src="https://img.shields.io/github/v/release/pocketbase/pocketbase?color=success&display_name=tag&label=latest&logo=docker&logoColor=%23fff&sort=semver&style=flat-square">
+   <a aria-label="Latest PocketBase Version" href="https://ganigeorgiev.com/pocketbase/pocketbase/releases" target="_blank">
+    <img alt="PocketBase releases" src="https://img.shields.io/badge/releases-ganigeorgiev.com-success?style=flat-square&logo=docker&logoColor=%23fff">
   </a>
-  <a aria-label="Supported architectures" href="https://github.com/pocketbase/pocketbase/releases" target="_blank">
+  <a aria-label="Supported architectures" href="https://ganigeorgiev.com/pocketbase/pocketbase/releases" target="_blank">
     <img alt="Supported Docker architectures" src="https://img.shields.io/badge/platform-amd64%20%7C%20arm64%20%7C%20armv7-brightgreen?style=flat-square&logo=linux&logoColor=%23fff">
   </a>
 </p>
@@ -235,15 +235,20 @@ docker run -d \
 ### Building the Image Locally
 
 ```bash
-# Build with specific PocketBase version
-docker build --build-arg VERSION=0.22.21 -t my-pocketbase .
+# Build with specific PocketBase version (v0.41.0+ from ganigeorgiev.com)
+docker build --build-arg VERSION=0.41.0 -t my-pocketbase .
 
-# Build with latest version (uses latest release from GitHub)
-docker build --build-arg VERSION=0.23.0 -t my-pocketbase:0.23.0 .
+# Build with another version from the new host
+docker build --build-arg VERSION=0.41.0 -t my-pocketbase:0.41.0 .
 
 # Build without specifying version (uses default from Dockerfile)
 docker build -t my-pocketbase:dev .
 ```
+
+> [!NOTE]
+> PocketBase moved off GitHub (archived Oct 2026). Releases `>=v0.41.0`
+> are published only on `https://ganigeorgiev.com/pocketbase/pocketbase/releases`.
+> Pre-`v0.41` builds need the old GitHub-based Dockerfile.
 
 ### Docker Compose for Development
 
@@ -253,7 +258,7 @@ services:
     build:
       context: .
       args:
-        - VERSION=0.22.21
+        - VERSION=0.41.0
     container_name: pocketbase-dev
     environment:
       PB_HOST: 0.0.0.0
@@ -422,5 +427,5 @@ This image supports multiple architectures. Docker will automatically pull the c
 
 ## Related Repositories
 
-- [PocketBase](https://github.com/pocketbase/pocketbase) - The official PocketBase repository
+- [PocketBase](https://ganigeorgiev.com/pocketbase/pocketbase) - The official PocketBase repository (moved off GitHub Oct 2026, old archive at `github.com/pocketbase/pocketbase`)
 - [PocketBase Documentation](https://pocketbase.io/docs/) - Official documentation
