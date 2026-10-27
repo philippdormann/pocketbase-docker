@@ -424,6 +424,7 @@ This image supports multiple architectures. Docker will automatically pull the c
 | `0.22.x` | Specific version (e.g., `0.22.21`) |
 | `0.22`   | Latest patch in minor version      |
 | `0`      | Latest release in major version    |
+| `0.41.0-r1` | Immutable rebuild of a version (`-rN` increments on rebuilds; floating tags always point at the newest rebuild) |
 
 ## Related Repositories
 
